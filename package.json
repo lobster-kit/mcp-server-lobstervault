@@ -7,8 +7,18 @@
   "bin": {
     "lobstervault-mcp": "./dist/index.js"
   },
-  "files": ["dist"],
-  "keywords": ["mcp", "model-context-protocol", "secrets", "vault", "ai", "agent", "lobsterkit"],
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "secrets",
+    "vault",
+    "ai",
+    "agent",
+    "lobsterkit"
+  ],
   "author": "LobsterKit",
   "license": "MIT",
   "repository": {
@@ -21,6 +31,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "tsup": "^8.3.6",
     "typescript": "^5.7.3"
   },
