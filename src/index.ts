@@ -1,7 +1,60 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { VaultError } from '@lobsterkit/vault';
 import { getClient } from './state.js';
+
+// ── Proactive error guidance ─────────────────────────────────────────────────
+
+type ToolResult = { content: { type: 'text'; text: string }[] };
+
+const TIER_GUIDANCE: Record<string, string[]> = {
+  rotate_secret: [
+    'Cannot rotate secret: this operation requires Pro tier.',
+    '',
+    'Tier overview:',
+    '- Free: 10 secrets',
+    '- Builder ($9/mo): 100 secrets, versioning, audit log',
+    '- Pro ($29/mo): unlimited secrets, rotation support',
+    '',
+    'Use get_account to check your current tier and limits.',
+  ],
+  set_secret: [
+    'Cannot store secret: you have reached the secret limit for your tier.',
+    '',
+    'To store more secrets, upgrade your tier:',
+    '- Free: 10 secrets',
+    '- Builder ($9/mo): 100 secrets',
+    '- Pro ($29/mo): unlimited secrets',
+    '',
+    'Use get_account to check your current usage.',
+  ],
+};
+
+function handleVaultError(err: unknown, operation: string): ToolResult | null {
+  if (!(err instanceof VaultError)) return null;
+
+  if (err.status === 403) {
+    const lines = TIER_GUIDANCE[operation] ?? [
+      `This operation requires a higher account tier.`,
+      `Error: ${err.message}`,
+      '',
+      'Use get_account to check your current tier and limits.',
+    ];
+    return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  }
+
+  if (err.status === 429) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Rate limit exceeded for ${operation}. Wait a moment and try again.`,
+      }],
+    };
+  }
+
+  return null;
+}
 
 const server = new McpServer(
   { name: 'lobstervault', version: '0.1.0' },
@@ -54,17 +107,23 @@ server.registerTool(
     },
   },
   async ({ name, value, metadata, ttlSeconds }) => {
-    const vault = await getClient();
-    const result = await vault.set(name, value, { metadata, ttlSeconds });
+    try {
+      const vault = await getClient();
+      const result = await vault.set(name, value, { metadata, ttlSeconds });
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `✅ Secret "${name}" stored (version ${result.version}).`,
-        },
-      ],
-    };
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `✅ Secret "${name}" stored (version ${result.version}).`,
+          },
+        ],
+      };
+    } catch (err) {
+      const guidance = handleVaultError(err, 'set_secret');
+      if (guidance) return guidance;
+      throw err;
+    }
   },
 );
 
@@ -214,17 +273,23 @@ server.registerTool(
     },
   },
   async ({ name }) => {
-    const vault = await getClient();
-    const result = await vault.rotate(name);
+    try {
+      const vault = await getClient();
+      const result = await vault.rotate(name);
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `✅ Secret "${name}" rotated (now v${result.version}, rotated at ${result.rotatedAt}).`,
-        },
-      ],
-    };
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `✅ Secret "${name}" rotated (now v${result.version}, rotated at ${result.rotatedAt}).`,
+          },
+        ],
+      };
+    } catch (err) {
+      const guidance = handleVaultError(err, 'rotate_secret');
+      if (guidance) return guidance;
+      throw err;
+    }
   },
 );
 
