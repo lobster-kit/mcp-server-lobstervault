@@ -1,6 +1,6 @@
 {
   "name": "@lobsterkit/vault-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for LobsterVault — encrypted secret storage for agents",
   "type": "module",
   "main": "./dist/index.js",
