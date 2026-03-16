@@ -56,8 +56,18 @@ curl -X PUT https://api.theclawdepot.com/vault/v1/secrets/MY_KEY \
   -H "Content-Type: application/json" \
   -d '{"value": "my-secret-value"}'
 
-# Retrieve
+# Store with expiry
+curl -X PUT https://api.theclawdepot.com/vault/v1/secrets/MY_KEY \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"value": "my-secret-value", "expiresAt": "2026-04-01T00:00:00Z"}'
+
+# Retrieve (latest)
 curl https://api.theclawdepot.com/vault/v1/secrets/MY_KEY \
+  -H "Authorization: Bearer $TOKEN"
+
+# Retrieve specific version (Builder+)
+curl "https://api.theclawdepot.com/vault/v1/secrets/MY_KEY?version=2" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -96,12 +106,12 @@ LobsterVault uses **envelope encryption**:
 
 ## Tier & Pricing
 
-| Tier | Name | Price | Secrets | Versions | Rotation | Audit |
+| Tier | Name | Price | Secrets | Versions | Rotation | Shares | Audit |
 |------|------|-------|---------|----------|----------|-------|
-| 0 | Free | $0 | 10 | 1 | No | None |
-| 1 | Builder | $9/mo | 100 | 5 | No | 30 days |
-| 2 | Pro | $29/mo | Unlimited | 20 | Yes | 90 days |
-| 3 | Scale | $79/mo | Unlimited | Unlimited | Automated | 1 year |
+| 0 | Free | $0 | 10 | 1 | No | No | None |
+| 1 | Builder | $9/mo | 100 | 5 | No | 3 scopes | 30 days |
+| 2 | Pro | $29/mo | Unlimited | 20 | Yes | 10 scopes | 90 days |
+| 3 | Scale | $79/mo | Unlimited | Unlimited | Automated | Unlimited | 1 year |
 
 ---
 
@@ -115,6 +125,10 @@ LobsterVault uses **envelope encryption**:
 | `list_secrets` | List all secret names, versions, timestamps. Values never returned. |
 | `inject_secrets` | Load all secrets into process.env. Returns count injected. |
 | `rotate_secret` | Re-encrypt with fresh DEK (Pro+ tier). |
+| `share_secret` | Create a time-limited share link for a secret (Builder+). |
+| `list_shares` | List active (non-revoked, non-expired) share links (Builder+). |
+| `revoke_share` | Revoke a share link immediately (Builder+). |
+| `get_shared_secret` | Retrieve a shared secret using a share token (no auth). |
 | `get_account` | View tier, limits, and current usage. |
 
 ---
@@ -127,10 +141,12 @@ const vault = new LobsterVault({ apiKey: 'lv_sk_...' });
 // Store / update
 await vault.set('MY_KEY', 'value');
 await vault.set('MY_KEY', 'value', { ttlSeconds: 3600 });
+await vault.set('MY_KEY', 'value', { expiresAt: '2026-04-01T00:00:00Z' });
 
-// Retrieve
-const value = await vault.get('MY_KEY');          // string | null
-const full  = await vault.getWithMeta('MY_KEY');  // full metadata
+// Retrieve (latest or specific version)
+const value = await vault.get('MY_KEY');                    // string | null
+const v2    = await vault.get('MY_KEY', { version: 2 });   // specific version (Builder+)
+const full  = await vault.getWithMeta('MY_KEY');            // full metadata
 
 // List
 const { data, pagination } = await vault.list({ prefix: 'prod/' });
@@ -144,9 +160,18 @@ await vault.inject(process.env);
 // Rotate encryption key (Pro+)
 await vault.rotate('MY_KEY');
 
+// Share (Builder+)
+const share = await vault.share('MY_KEY', { expiresInSeconds: 3600, maxReads: 5, scope: 'ci' });
+// => share.shareToken (format: lvs_{nanoid}), share.expiresAt
+const shares = await vault.listShares();           // all active shares
+await vault.revokeShare(shareId);                  // revoke immediately
+const shared = await vault.getShared(shareToken);  // retrieve shared secret (no auth)
+
 // Account info
 const account = await vault.account();
 ```
+
+**Note:** If `set` returns a `VERSION_LIMIT_EXCEEDED` error, the tier's version cap has been reached. Delete and recreate the secret, or upgrade the tier.
 
 ---
 
