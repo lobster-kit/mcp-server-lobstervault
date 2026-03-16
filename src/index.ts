@@ -104,12 +104,16 @@ server.registerTool(
         .number()
         .optional()
         .describe('Optional: auto-expire this secret after N seconds'),
+      expiresAt: z
+        .string()
+        .optional()
+        .describe('Optional: absolute expiry as ISO 8601 date string (mutually exclusive with ttlSeconds)'),
     },
   },
-  async ({ name, value, metadata, ttlSeconds }) => {
+  async ({ name, value, metadata, ttlSeconds, expiresAt }) => {
     try {
       const vault = await getClient();
-      const result = await vault.set(name, value, { metadata, ttlSeconds });
+      const result = await vault.set(name, value, { metadata, ttlSeconds, expiresAt });
 
       return {
         content: [
@@ -133,14 +137,15 @@ server.registerTool(
   'get_secret',
   {
     title: 'Get Secret',
-    description: 'Retrieve and decrypt a secret value by name. Returns null if not found.',
+    description: 'Retrieve and decrypt a secret value by name. Returns null if not found. Pass a version number to retrieve a specific historical version (Builder+ tier).',
     inputSchema: {
       name: z.string().describe('Secret name to retrieve'),
+      version: z.number().optional().describe('Optional: retrieve a specific historical version (Builder+ tier)'),
     },
   },
-  async ({ name }) => {
+  async ({ name, version }) => {
     const vault = await getClient();
-    const value = await vault.get(name);
+    const value = await vault.get(name, version ? { version } : undefined);
 
     if (value === null) {
       return {
@@ -318,6 +323,184 @@ server.registerTool(
     ];
 
     return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  },
+);
+
+// ── share_secret ──────────────────────────────────────────────────────────────
+
+server.registerTool(
+  'share_secret',
+  {
+    title: 'Share Secret',
+    description:
+      'Create a time-limited, read-only share link for a secret. Returns a shareToken that can be used to retrieve the secret without authentication. Requires Builder+ tier.',
+    inputSchema: {
+      name: z.string().describe('Secret name to share'),
+      expiresInSeconds: z
+        .number()
+        .optional()
+        .describe('Link expiry in seconds (default 3600, max 7 days)'),
+      maxReads: z
+        .number()
+        .optional()
+        .describe('Optional: max number of times the link can be read'),
+      scope: z
+        .string()
+        .optional()
+        .describe('Optional: label for this share (e.g. "ci-pipeline", "teammate-bob")'),
+    },
+  },
+  async ({ name, expiresInSeconds, maxReads, scope }) => {
+    try {
+      const vault = await getClient();
+      const result = await vault.share(name, { expiresInSeconds, maxReads, scope });
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: [
+              `Share link created for "${name}".`,
+              `Share token: ${result.shareToken}`,
+              `Expires at: ${result.expiresAt}`,
+              maxReads ? `Max reads: ${maxReads}` : '',
+              '',
+              `Retrieve with: GET /v1/shared/${result.shareToken}`,
+            ]
+              .filter(Boolean)
+              .join('\n'),
+          },
+        ],
+      };
+    } catch (err) {
+      const guidance = handleVaultError(err, 'share_secret');
+      if (guidance) return guidance;
+      throw err;
+    }
+  },
+);
+
+// ── list_shares ───────────────────────────────────────────────────────────────
+
+server.registerTool(
+  'list_shares',
+  {
+    title: 'List Shares',
+    description:
+      'List all active (non-revoked, non-expired) share links on the account. Requires Builder+ tier.',
+    inputSchema: {
+      secretName: z
+        .string()
+        .optional()
+        .describe('Optional: filter shares by secret name'),
+    },
+  },
+  async ({ secretName }) => {
+    try {
+      const vault = await getClient();
+      const result = await vault.listShares(secretName);
+
+      if (result.shares.length === 0) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'No active shares found.',
+            },
+          ],
+        };
+      }
+
+      const rows = result.shares.map(
+        (s) =>
+          `- ${s.secretName} (${s.shareId}) — expires ${s.expiresAt}, reads: ${s.readCount}${s.maxReads ? `/${s.maxReads}` : ''}`,
+      );
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `${result.shares.length} active share(s):\n\n${rows.join('\n')}`,
+          },
+        ],
+      };
+    } catch (err) {
+      const guidance = handleVaultError(err, 'list_shares');
+      if (guidance) return guidance;
+      throw err;
+    }
+  },
+);
+
+// ── revoke_share ──────────────────────────────────────────────────────────────
+
+server.registerTool(
+  'revoke_share',
+  {
+    title: 'Revoke Share',
+    description: 'Revoke a share link immediately so it can no longer be used. Requires Builder+ tier.',
+    inputSchema: {
+      shareId: z.string().describe('The share ID to revoke (from list_shares)'),
+    },
+  },
+  async ({ shareId }) => {
+    try {
+      const vault = await getClient();
+      const revoked = await vault.revokeShare(shareId);
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: revoked
+              ? `Share "${shareId}" revoked.`
+              : `Share "${shareId}" not found — nothing to revoke.`,
+          },
+        ],
+      };
+    } catch (err) {
+      const guidance = handleVaultError(err, 'revoke_share');
+      if (guidance) return guidance;
+      throw err;
+    }
+  },
+);
+
+// ── get_shared_secret ─────────────────────────────────────────────────────────
+
+server.registerTool(
+  'get_shared_secret',
+  {
+    title: 'Get Shared Secret',
+    description:
+      'Retrieve a shared secret using a share token. No authentication required. The share must be non-expired, non-revoked, and within its read limit.',
+    inputSchema: {
+      shareToken: z.string().describe('The share token from a share link'),
+    },
+  },
+  async ({ shareToken }) => {
+    const vault = await getClient();
+    const result = await vault.getShared(shareToken);
+
+    if (result === null) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Share not found, expired, revoked, or read limit exceeded.',
+          },
+        ],
+      };
+    }
+
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Secret: ${result.name}\nValue: ${result.value}\nExpires at: ${result.expiresAt}`,
+        },
+      ],
+    };
   },
 );
 
