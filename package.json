@@ -26,7 +26,7 @@
     "url": "https://github.com/lobster-kit/mcp-server-lobstervault"
   },
   "dependencies": {
-    "@lobsterkit/vault": "^0.1.0",
+    "@lobsterkit/vault": "^0.2.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "zod": "^3.25.0"
   },
