@@ -1,6 +1,6 @@
 ---
 name: lobstervault
-version: 0.1.0
+version: 0.3.0
 homepage: https://theclawdepot.com/vault
 description: Encrypted secret storage for agents. Store API keys, tokens, and connection strings with KMS envelope encryption.
 ---
@@ -20,7 +20,7 @@ Add to your MCP config:
   "mcpServers": {
     "lobstervault": {
       "command": "npx",
-      "args": ["@lobsterkit/vault-mcp@0.1.0"]
+      "args": ["@lobsterkit/vault-mcp@0.3.0"]
     }
   }
 }

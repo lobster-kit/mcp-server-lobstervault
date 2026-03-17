@@ -57,7 +57,7 @@ function handleVaultError(err: unknown, operation: string): ToolResult | null {
 }
 
 const server = new McpServer(
-  { name: 'lobstervault', version: '0.1.0' },
+  { name: 'lobstervault', version: '0.3.0' },
   {
     capabilities: { tools: {} },
     instructions: `LobsterVault — encrypted secret storage for agents.
@@ -106,8 +106,9 @@ server.registerTool(
         .describe('Optional: auto-expire this secret after N seconds'),
       expiresAt: z
         .string()
+        .datetime()
         .optional()
-        .describe('Optional: absolute expiry as ISO 8601 date string (mutually exclusive with ttlSeconds)'),
+        .describe('Optional: absolute expiry as ISO 8601 datetime (mutually exclusive with ttlSeconds)'),
     },
   },
   async ({ name, value, metadata, ttlSeconds, expiresAt }) => {
@@ -140,27 +141,33 @@ server.registerTool(
     description: 'Retrieve and decrypt a secret value by name. Returns null if not found. Pass a version number to retrieve a specific historical version (Builder+ tier).',
     inputSchema: {
       name: z.string().describe('Secret name to retrieve'),
-      version: z.number().optional().describe('Optional: retrieve a specific historical version (Builder+ tier)'),
+      version: z.number().int().positive().optional().describe('Optional: retrieve a specific historical version (Builder+ tier)'),
     },
   },
   async ({ name, version }) => {
-    const vault = await getClient();
-    const value = await vault.get(name, version ? { version } : undefined);
+    try {
+      const vault = await getClient();
+      const value = await vault.get(name, version !== undefined ? { version } : undefined);
 
-    if (value === null) {
+      if (value === null) {
+        return {
+          content: [{ type: 'text' as const, text: `Secret "${name}" not found.` }],
+        };
+      }
+
       return {
-        content: [{ type: 'text' as const, text: `Secret "${name}" not found.` }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `Secret: ${name}\nValue: ${value}`,
+          },
+        ],
       };
+    } catch (err) {
+      const guidance = handleVaultError(err, 'get_secret');
+      if (guidance) return guidance;
+      throw err;
     }
-
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Secret: ${name}\nValue: ${value}`,
-        },
-      ],
-    };
   },
 );
 
@@ -479,28 +486,34 @@ server.registerTool(
     },
   },
   async ({ shareToken }) => {
-    const vault = await getClient();
-    const result = await vault.getShared(shareToken);
+    try {
+      const vault = await getClient();
+      const result = await vault.getShared(shareToken);
 
-    if (result === null) {
+      if (result === null) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Share not found, expired, revoked, or read limit exceeded.',
+            },
+          ],
+        };
+      }
+
       return {
         content: [
           {
             type: 'text' as const,
-            text: 'Share not found, expired, revoked, or read limit exceeded.',
+            text: `Secret: ${result.name}\nValue: ${result.value}\nExpires at: ${result.expiresAt}`,
           },
         ],
       };
+    } catch (err) {
+      const guidance = handleVaultError(err, 'get_shared_secret');
+      if (guidance) return guidance;
+      throw err;
     }
-
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Secret: ${result.name}\nValue: ${result.value}\nExpires at: ${result.expiresAt}`,
-        },
-      ],
-    };
   },
 );
 

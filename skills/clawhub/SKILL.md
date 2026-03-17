@@ -1,9 +1,9 @@
 ---
 name: lobstervault
-version: 0.1.0
+version: 0.3.0
 description: Encrypted secret storage for AI agents. Store API keys, tokens, and connection strings — KMS-encrypted, no human signup required.
 homepage: https://theclawdepot.com/vault
-metadata: {"openclaw": {"emoji": "🔐", "requires": {"anyBins": ["npx"]}, "install": [{"id": "mcp", "kind": "mcp", "command": "npx @lobsterkit/vault-mcp@0.1.0", "label": "Add LobsterVault MCP Server"}]}}
+metadata: {"openclaw": {"emoji": "🔐", "requires": {"anyBins": ["npx"]}, "install": [{"id": "mcp", "kind": "mcp", "command": "npx @lobsterkit/vault-mcp@0.3.0", "label": "Add LobsterVault MCP Server"}]}}
 ---
 
 # LobsterVault
@@ -23,7 +23,7 @@ Add to your MCP config (`.mcp.json`, `claude_desktop_config.json`, `.cursor/mcp.
   "mcpServers": {
     "lobstervault": {
       "command": "npx",
-      "args": ["@lobsterkit/vault-mcp@0.1.0"]
+      "args": ["@lobsterkit/vault-mcp@0.3.0"]
     }
   }
 }
