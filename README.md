@@ -29,6 +29,10 @@ On first use, an account is created automatically and your token is saved to `~/
 | `list_secrets` | List all secret names, versions, timestamps. Values never returned. |
 | `inject_secrets` | Load all secrets into process.env. Returns count injected. |
 | `rotate_secret` | Re-encrypt with fresh DEK (Pro+ tier). |
+| `share_secret` | Create a time-limited, read-only share link for a secret (Builder+). |
+| `list_shares` | List all active share links on the account (Builder+). |
+| `revoke_share` | Revoke a share link immediately (Builder+). |
+| `get_shared_secret` | Retrieve a shared secret using a share token (no auth required). |
 | `get_account` | View tier, limits, and current usage. |
 
 ## Environment Variables
